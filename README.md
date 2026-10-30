@@ -468,20 +468,4 @@ The dashboard provides interactive selection cards and seamless policy switching
 
 ---
 
-## 13. Project Roadmap
 
-- [x] **Stage 1**: Foundation & modular structure.
-- [x] **Stage 2**: Network simulator, CSV validation, bandwidth lookup, and synthetic traces.
-- [x] **Stage 3**: Video buffer simulation, stall modeling, and segmented-download engine.
-- [x] **Stage 4**: Three completed ABR algorithms (throughput-based, buffer-based, and proposed hybrid).
-- [x] **Stage 5**: Complete ABR experiment engine, CLI runner, and CSV telemetry logger.
-- [x] **Stage 6**: QoE benchmarking, batch evaluation pipeline, and automated visualizations.
-- [x] **Stage 7**: Real MPEG-DASH video encoding with FFmpeg and multi-representation ladder.
-- [x] **Stage 8A**: Flask HTTP streaming server with CORS, health endpoint, and Range support.
-- [x] **Stage 8B**: Interactive browser video player (dash.js) & live telemetry dashboard.
-- [x] **Stage 8C**: Real-time playback telemetry, live visualizations, session stats & data export.
-- [x] **Stage 9A**: Client-side JavaScript hybrid ABR port & cross-language parity test harness.
-- [x] **Stage 9B**: Real browser player integration (Hybrid mode controller, three-way policy switching, telemetry & duplicate suppression).
-- [x] **Stage 10**: Final experimental evaluation, defensible reporting, and cross-platform verification.
-- [x] **Stage 11**: Final project report audit, factual verification, and academic submission preparation.
-- [x] **Stage 12**: Interactive Multi-Algorithm Comparison Dashboard, persistent backend API, and live Mininet network integration.
