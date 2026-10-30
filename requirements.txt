@@ -1,0 +1,9 @@
+# Core simulation and data analysis
+numpy>=1.24.0
+matplotlib>=3.7.0
+
+# Testing
+pytest>=7.0.0
+
+# Web Dashboard (will be used in the dashboard phase)
+Flask>=2.3.0

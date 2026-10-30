@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MPEG-DASH Video Player | QoE-Driven ABR Comparison Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/player.css') }}">
+</head>
+<body>
+    <!-- Navigation Header -->
+    <header class="app-header">
+        <div class="header-container">
+            <div class="logo-group">
+                <span class="logo-badge">Stage 9B / Live Comparison</span>
+                <div>
+                    <h1 class="app-title">QoE-Driven Adaptive Bitrate (ABR) Video Streaming</h1>
+                    <p class="app-subtitle">Multi-Algorithm Comparison Dashboard &amp; Live Mininet Network Testbed</p>
+                </div>
+            </div>
+            <div class="header-links">
+                <a href="/health" target="_blank" class="nav-link" title="Check server and stream health">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+                    </svg>
+                    API Health
+                </a>
+                <a href="{{ manifest_url }}" target="_blank" class="nav-link" title="View MPEG-DASH manifest">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="5 3 19 12 5 21 5 3"/>
+                    </svg>
+                    MPD Manifest
+                </a>
+                <a href="/api/experiments" target="_blank" class="nav-link" title="View persistent comparison JSON data">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14 2 14 8 20 8"></polyline>
+                        <line x1="16" y1="13" x2="8" y2="13"></line>
+                        <line x1="16" y1="17" x2="8" y2="17"></line>
+                        <polyline points="10 9 9 9 8 9"></polyline>
+                    </svg>
+                    Experiments API
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="main-container">
+
+        <!-- =================================================================== -->
+        <!-- TOP SECTION: ALGORITHM SELECTION CARDS & EXPERIMENT CONTROLS        -->
+        <!-- =================================================================== -->
+        <section class="experiment-top-section">
+            
+            <!-- Algorithm Selection Section -->
+            <div class="card algo-selection-card">
+                <div class="card-header">
+                    <h2 class="card-title">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+                            <polyline points="2 17 12 22 22 17"/>
+                            <polyline points="2 12 12 17 22 12"/>
+                        </svg>
+                        Adaptive Bitrate (ABR) Algorithms
+                    </h2>
+                    <span class="card-badge" id="currentAlgoBadge">Hybrid QoE Active</span>
+                </div>
+
+                <div class="algo-cards-grid">
+                    <!-- Algorithm 1: Throughput-Based -->
+                    <div class="algo-card" id="cardAlgoThroughput" data-algo="throughput">
+                        <div class="algo-card-header">
+                            <span class="algo-pill pill-blue">Throughput-Based</span>
+                            <span class="algo-status-indicator" id="statusAlgoThroughput">Select</span>
+                        </div>
+                        <h3 class="algo-card-title">Throughput-Based ABR</h3>
+                        <p class="algo-card-desc">
+                            Direct bandwidth matching using harmonic mean of recent segment throughputs with safety headroom.
+                        </p>
+                        <div class="algo-formula-box">
+                            <code>R<sub>k</sub> &le; 0.85 &times; HarmonicMean(T<sub>past 5</sub>)</code>
+                        </div>
+                        <ul class="algo-params-list">
+                            <li><strong>Window:</strong> 5 chunks</li>
+                            <li><strong>Safety Factor:</strong> 0.85</li>
+                            <li><strong>Property:</strong> Reactive to capacity changes</li>
+                        </ul>
+                    </div>
+
+                    <!-- Algorithm 2: Buffer-Based (BBA) -->
+                    <div class="algo-card" id="cardAlgoBuffer" data-algo="buffer">
+                        <div class="algo-card-header">
+                            <span class="algo-pill pill-amber">Buffer-Based (BBA)</span>
+                            <span class="algo-status-indicator" id="statusAlgoBuffer">Select</span>
+                        </div>
+                        <h3 class="algo-card-title">Buffer-Based ABR (BBA)</h3>
+                        <p class="algo-card-desc">
+                            Adapts bitrate directly from client playback buffer occupancy, completely ignoring throughput spikes.
+                        </p>
+                        <div class="algo-formula-box">
+                            <code>f(B) &isin; [Reservoir: 5s, Cushion: 10s, Max: 15s]</code>
+                        </div>
+                        <ul class="algo-params-list">
+                            <li><strong>Reservoir:</strong> 5.0s (min 360p)</li>
+                            <li><strong>Cushion:</strong> 10.0s (linear scaling)</li>
+                            <li><strong>Hysteresis:</strong> 0.5s stability band</li>
+                        </ul>
+                    </div>
+
+                    <!-- Algorithm 3: Custom Hybrid QoE -->
+                    <div class="algo-card active" id="cardAlgoHybrid" data-algo="hybrid">
+                        <div class="algo-card-header">
+                            <span class="algo-pill pill-green">Custom Hybrid ABR</span>
+                            <span class="algo-status-indicator active" id="statusAlgoHybrid">Active</span>
+                        </div>
+                        <h3 class="algo-card-title">QoE-Driven Hybrid ABR</h3>
+                        <p class="algo-card-desc">
+                            Optimizes QoE by combining volatility-discounted throughput, buffer drain feasibility, and switching penalties.
+                        </p>
+                        <div class="algo-formula-box">
+                            <code>max [ q(R) &minus; &beta; &middot; StallRisk &minus; &lambda; &middot; |&Delta;R| ]</code>
+                        </div>
+                        <ul class="algo-params-list">
+                            <li><strong>Throughput:</strong> Volatility (CV) discount</li>
+                            <li><strong>Buffer:</strong> Cushion scale + Drain check</li>
+                            <li><strong>Switching:</strong> Penalty &lambda; = 0.5</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Experiment Controls Bar & Network Scenario Panel -->
+            <div class="experiment-controls-bar card">
+                <div class="exp-bar-left">
+                    <div class="exp-status-group">
+                        <span class="exp-label">Experiment Status:</span>
+                        <div id="expStatusBadge" class="exp-badge exp-badge-idle">
+                            <span class="exp-dot"></span>
+                            <span id="expStatusText">IDLE</span>
+                        </div>
+                        <span id="runAllProgress" class="exp-progress-badge" style="display: none;">Algorithm 1 of 3</span>
+                        <div class="exp-timer" id="expTimer">00:00 / 00:30</div>
+                    </div>
+                    
+                    <div class="exp-btn-group">
+                        <button id="btnStartExperiment" type="button" class="btn-action btn-start" title="Start experiment recording and play video">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                                <polygon points="5 3 19 12 5 21 5 3"/>
+                            </svg>
+                            Start Experiment
+                        </button>
+                        <button id="btnStopExperiment" type="button" class="btn-action btn-stop" disabled title="Stop experiment, compute QoE, and save results">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                                <rect x="6" y="6" width="12" height="12"/>
+                            </svg>
+                            Stop Experiment
+                        </button>
+                        <button id="btnResetExperiment" type="button" class="btn-action btn-reset" title="Reset playback position, counters, and active session">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                                <path d="M3 3v5h5"/>
+                            </svg>
+                            Reset
+                        </button>
+                        <button id="btnRunAllAlgorithms" type="button" class="btn-action btn-run-all" title="Sequentially evaluate Throughput, Buffer, and Hybrid ABR">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polygon points="5 4 15 12 5 20 5 4"/>
+                                <line x1="19" y1="5" x2="19" y2="19"/>
+                            </svg>
+                            Run All 3 Algorithms
+                        </button>
+                        <button id="btnClearExperiments" type="button" class="btn-action btn-clear-danger" title="Clear all stored comparison runs from backend">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="3 6 5 6 21 6"/>
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                            </svg>
+                            Clear Results
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Network Scenario & Mininet Helper -->
+                <div class="exp-bar-right">
+                    <div class="scenario-selector-group">
+                        <label for="networkScenarioSelect" class="scenario-label">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="2" y="2" width="20" height="8" rx="2" ry="2"/>
+                                <rect x="2" y="14" width="20" height="8" rx="2" ry="2"/>
+                                <line x1="6" y1="6" x2="6.01" y2="6"/>
+                                <line x1="6" y1="18" x2="6.01" y2="18"/>
+                            </svg>
+                            Mininet Scenario:
+                        </label>
+                        <select id="networkScenarioSelect" class="scenario-select">
+                            <option value="5 Mbps" selected>5 Mbps (High Bandwidth / 1080p target)</option>
+                            <option value="1 Mbps">1 Mbps (Constrained Bandwidth / 480p target)</option>
+                            <option value="500 kbps">500 kbps (Severe Bandwidth / 360p target)</option>
+                            <option value="Fluctuating">Fluctuating Bandwidth (5 Mbps &rarr; 1 Mbps)</option>
+                            <option value="Custom">Custom / Dynamic</option>
+                        </select>
+                    </div>
+
+                    <div class="mininet-command-box" title="Mininet CLI command for this bandwidth setting">
+                        <span class="mininet-cli-prompt">mininet&gt;</span>
+                        <code id="mininetCommandText">py s1.linksTo(h2)[0].intf2.config(bw=5)</code>
+                        <button id="btnCopyMininetCmd" class="btn-copy-cmd" type="button" title="Copy Mininet command to clipboard">
+                            Copy
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- =================================================================== -->
+        <!-- MIDDLE GRID: VIDEO VIEWPORT, LIVE METRICS, CHARTS, & TIMELINE      -->
+        <!-- =================================================================== -->
+        <div class="player-grid">
+            <!-- Left Column: Video, Buffering Bar, Telemetry Bar, & Live Charts -->
+            <section class="video-column">
+                
+                <!-- Post-Startup Stall & Low Buffer Alert Box -->
+                <div id="alertBox" class="alert-box" role="alert">
+                    <div class="alert-title">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"/>
+                            <line x1="12" y1="8" x2="12" y2="12"/>
+                            <line x1="12" y1="16" x2="12.01" y2="16"/>
+                        </svg>
+                        Playback Notification
+                    </div>
+                    <div id="alertMsg">An issue occurred while loading the video stream.</div>
+                </div>
+
+                <!-- Video Viewport -->
+                <div class="video-wrapper">
+                    <video id="videoPlayer" controls playsinline muted data-manifest="{{ manifest_url }}">
+                        Your browser does not support HTML5 video with Media Source Extensions.
+                    </video>
+                </div>
+
+                <!-- Enhanced Buffering Visualizer with Threshold Guidelines -->
+                <div class="buffer-visualizer-card card">
+                    <div class="buffer-header">
+                        <div class="buffer-title-group">
+                            <span class="buffer-label">Client Playback Buffer Level:</span>
+                            <span class="buffer-numeric" id="bufferNumericText">0.00s</span>
+                            <span class="buffer-status-tag" id="bufferStatusTag">Safe</span>
+                        </div>
+                        <div class="buffer-threshold-legend">
+                            <span class="legend-chip chip-red">0s &ndash; 5s Reservoir</span>
+                            <span class="legend-chip chip-amber">5s &ndash; 15s Cushion</span>
+                            <span class="legend-chip chip-green">&gt; 15s Max</span>
+                        </div>
+                    </div>
+
+                    <div class="buffer-bar-track">
+                        <div id="bufferBar" class="buffer-bar-fill"></div>
+                        <!-- Threshold Line Markers -->
+                        <div class="threshold-marker marker-reservoir" style="left: 16.66%;" title="5.0s Reservoir Threshold">
+                            <span class="marker-label">5s (Res)</span>
+                        </div>
+                        <div class="threshold-marker marker-cushion" style="left: 33.33%;" title="10.0s Target Cushion">
+                            <span class="marker-label">10s (Target)</span>
+                        </div>
+                        <div class="threshold-marker marker-upper" style="left: 50.00%;" title="15.0s Upper Bound">
+                            <span class="marker-label">15s (Max)</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Real-Time Playback Telemetry Bar -->
+                <div class="telemetry-grid">
+                    <div class="stat-card">
+                        <span class="stat-label">Playback State</span>
+                        <div id="stateBadge" class="badge badge-ready">
+                            <span id="stateDot" class="badge-dot"></span>
+                            <span id="stateText">Ready</span>
+                        </div>
+                        <span class="stat-subtext">Engine: dash.js</span>
+                    </div>
+
+                    <div class="stat-card">
+                        <span class="stat-label">ABR Mode</span>
+                        <span class="stat-value" id="modeBadge">CUSTOM HYBRID ABR</span>
+                        <span class="stat-subtext">Active Adaptation</span>
+                    </div>
+
+                    <div class="stat-card">
+                        <span class="stat-label">Active Resolution</span>
+                        <span class="stat-value" id="currentResolution">--</span>
+                        <span class="stat-subtext">Video Dimensions</span>
+                    </div>
+
+                    <div class="stat-card">
+                        <span class="stat-label">Delivered Bitrate</span>
+                        <span class="stat-value" id="currentBitrate">--</span>
+                        <span class="stat-subtext">Encoding Tier</span>
+                    </div>
+
+                    <div class="stat-card">
+                        <span class="stat-label">Buffer Level</span>
+                        <div class="stat-value" id="bufferLevel">0.00s</div>
+                        <span class="stat-subtext">Reservoir Target: 5.0s</span>
+                    </div>
+
+                    <div class="stat-card">
+                        <span class="stat-label">Time / Duration</span>
+                        <span class="stat-value" id="playbackTime" style="font-size: 0.95rem;">00:00 / 00:30</span>
+                        <span class="stat-subtext">30-Second Source</span>
+                    </div>
+
+                    <!-- Network Segment Metrics -->
+                    <div class="stat-card">
+                        <span class="stat-label">Latest Segment DL</span>
+                        <span class="stat-value" id="statDownloadTime">--</span>
+                        <span class="stat-subtext">Fetch Duration</span>
+                    </div>
+
+                    <div class="stat-card">
+                        <span class="stat-label">Segment Chunk Size</span>
+                        <span class="stat-value" id="statChunkSize">--</span>
+                        <span class="stat-subtext">Transferred Bytes</span>
+                    </div>
+
+                    <div class="stat-card">
+                        <span class="stat-label">Segment Throughput</span>
+                        <span class="stat-value" id="statChunkThroughput">--</span>
+                        <span class="stat-subtext">Measured Speed</span>
+                    </div>
+                </div>
+
+                <!-- Live Performance Visualizations Card -->
+                <div class="card charts-card">
+                    <div class="card-header">
+                        <h2 class="card-title">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="18" y1="20" x2="18" y2="10"/>
+                                <line x1="12" y1="20" x2="12" y2="4"/>
+                                <line x1="6" y1="20" x2="6" y2="14"/>
+                            </svg>
+                            Live Playback Visualizations
+                        </h2>
+                        <div class="chart-tab-group">
+                            <button id="tabBitrate" class="chart-tab active" type="button">Bitrate &amp; Quality</button>
+                            <button id="tabBuffer" class="chart-tab" type="button">Buffer Occupancy</button>
+                        </div>
+                    </div>
+
+                    <div class="chart-canvas-container">
+                        <canvas id="bitrateChartCanvas" height="190"></canvas>
+                        <canvas id="bufferChartCanvas" height="190" style="display: none;"></canvas>
+                    </div>
+
+                    <div class="chart-footer">
+                        <div id="bitrateLegend" class="chart-legend">
+                            <span class="legend-item"><span class="legend-dot dot-blue"></span> Rendered Bitrate (kbps)</span>
+                            <span class="legend-item"><span class="legend-dash dash-gray"></span> Tier Thresholds</span>
+                        </div>
+                        <div id="bufferLegend" class="chart-legend" style="display: none;">
+                            <span class="legend-item"><span class="legend-dot dot-green"></span> Buffer Occupancy (seconds)</span>
+                            <span class="legend-item"><span class="legend-dash dash-amber"></span> Target Cushion (10s)</span>
+                        </div>
+                        <span class="chart-hint">Updated continuously (500 ms sampling)</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Right Column: Controls, Session Stats, Stream Details, Audit Log -->
+            <section class="controls-column">
+                
+                <!-- Quality & ABR Controller Mode Selection Card -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="3"/>
+                                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                            </svg>
+                            ABR Controller Mode
+                        </h2>
+                        <span id="controllerStateBadge" class="card-badge">Stage 9B</span>
+                    </div>
+
+                    <div class="select-wrapper">
+                        <label for="abrModeSelect" class="form-label">Adaptation Policy</label>
+                        <select id="abrModeSelect" class="quality-select">
+                            <option value="throughput">Throughput-Based ABR (Harmonic Mean)</option>
+                            <option value="buffer">Buffer-Based ABR (BBA)</option>
+                            <option value="hybrid" selected>Custom Hybrid ABR (Stage 9 Policy)</option>
+                            <option value="auto">Auto — dash.js Built-in ABR</option>
+                            <option value="manual">Manual Tier (User-Pinned Quality)</option>
+                        </select>
+                    </div>
+
+                    <div class="select-wrapper" id="manualQualityWrapper">
+                        <label for="qualitySelect" class="form-label">Video Representation</label>
+                        <select id="qualitySelect" class="quality-select">
+                            <option value="auto">Auto (Managed by Active ABR Mode)</option>
+                        </select>
+                        <p id="modeDescription" class="select-hint">
+                            <strong>Custom Hybrid ABR:</strong> Quality dynamically driven by our QoE hybrid algorithm based on live throughput, volatility, buffer, and switching penalty.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Session Performance & QoE Statistics Card -->
+                <div class="card stats-card">
+                    <div class="card-header">
+                        <h2 class="card-title">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M20 12V8H6a2 2 0 0 1-2-2c0-1.1.9-2 2-2h12v4"/>
+                                <path d="M4 6v12c0 1.1.9 2 2 2h14v-4"/>
+                                <path d="M18 12a2 2 0 0 0-2 2c0 1.1.9 2 2 2h4v-4h-4z"/>
+                            </svg>
+                            Active Run Statistics &amp; QoE
+                        </h2>
+                        <span id="statsFinalizedBadge" class="stats-badge-finalized" style="display: none;">Frozen / Finalized</span>
+                        <div class="export-btn-group">
+                            <button id="exportCsvBtn" type="button" class="btn-export" title="Export session telemetry to CSV">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                    <polyline points="7 10 12 15 17 10"/>
+                                    <line x1="12" y1="15" x2="12" y2="3"/>
+                                </svg>
+                                CSV
+                            </button>
+                            <button id="exportJsonBtn" type="button" class="btn-export" title="Export session telemetry to JSON">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                    <polyline points="7 10 12 15 17 10"/>
+                                    <line x1="12" y1="15" x2="12" y2="3"/>
+                                </svg>
+                                JSON
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="session-stats-grid">
+                        <div class="session-stat-item">
+                            <span class="session-stat-label">Startup Delay</span>
+                            <span class="session-stat-val" id="statStartupDelay">N/A</span>
+                            <span class="session-stat-hint">First frame delay</span>
+                        </div>
+
+                        <div class="session-stat-item">
+                            <span class="session-stat-label">Playback Time</span>
+                            <span class="session-stat-val" id="statPlaybackTime">0.0s</span>
+                            <span class="session-stat-hint">Active rendering</span>
+                        </div>
+
+                        <div class="session-stat-item">
+                            <span class="session-stat-label">Stall Count</span>
+                            <span class="session-stat-val" id="statStallCount">0</span>
+                            <span class="session-stat-hint">Post-startup freezes</span>
+                        </div>
+
+                        <div class="session-stat-item">
+                            <span class="session-stat-label">Rebuffer Time</span>
+                            <span class="session-stat-val" id="statRebufferTime">0.00s</span>
+                            <span class="session-stat-hint">Total freeze duration</span>
+                        </div>
+
+                        <div class="session-stat-item">
+                            <span class="session-stat-label">Rebuffer Ratio</span>
+                            <span class="session-stat-val" id="statRebufferRatio">0.00%</span>
+                            <span class="session-stat-hint">Stall / Total session</span>
+                        </div>
+
+                        <div class="session-stat-item">
+                            <span class="session-stat-label">Avg Bitrate</span>
+                            <span class="session-stat-val" id="statAvgBitrate">--</span>
+                            <span class="session-stat-hint">Time-weighted kbps</span>
+                        </div>
+
+                        <div class="session-stat-item">
+                            <span class="session-stat-label">Switches (Rendered)</span>
+                            <span class="session-stat-val" id="statSwitchCount">0</span>
+                            <span class="session-stat-hint">Confirmed transitions</span>
+                        </div>
+
+                        <div class="session-stat-item">
+                            <span class="session-stat-label">Switch Magnitude</span>
+                            <span class="session-stat-val" id="statSwitchMagnitude">0 kbps</span>
+                            <span class="session-stat-hint">Cumulative |&Delta;R|</span>
+                        </div>
+
+                        <div class="session-stat-item session-qoe-item">
+                            <span class="session-stat-label">Academic QoE Score</span>
+                            <span class="session-stat-val qoe-score-val" id="statSessionQoE">0.00</span>
+                            <span class="session-stat-hint">&alpha;=1.0, &beta;=4.3, &gamma;=1.0</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quality Switch Audit Log Card -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                            </svg>
+                            Quality Switch Timeline
+                        </h2>
+                        <div style="display: flex; gap: 0.5rem; align-items: center;">
+                            <span id="switchCountBadge" class="card-badge">0 switches</span>
+                            <button id="clearLogBtn" type="button" class="card-badge btn-clear" style="cursor: pointer;">Clear</button>
+                        </div>
+                    </div>
+
+                    <div class="log-table-wrapper">
+                        <table class="log-table">
+                            <thead>
+                                <tr>
+                                    <th>Clock</th>
+                                    <th>Media Time</th>
+                                    <th>Event Type</th>
+                                    <th>Transition / Details</th>
+                                    <th>Buffer</th>
+                                    <th>Mode</th>
+                                </tr>
+                            </thead>
+                            <tbody id="switchLogBody">
+                                <!-- Populated dynamically by player.js -->
+                            </tbody>
+                        </table>
+                        <div id="emptyLogMsg" class="empty-log">
+                            No quality switch events yet.<br>Start playback to monitor ABR decision outcomes.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Stream & Mininet Details Card -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"/>
+                                <line x1="12" y1="16" x2="12" y2="12"/>
+                                <line x1="12" y1="8" x2="12.01" y2="8"/>
+                            </svg>
+                            Stream &amp; Testbed Details
+                        </h2>
+                        <span class="card-badge">Mininet + MPEG-DASH</span>
+                    </div>
+
+                    <div class="metadata-list">
+                        <div class="metadata-item">
+                            <span class="metadata-label">Network Topology</span>
+                            <span class="metadata-val">Browser &rarr; Gateway &rarr; Mininet h1 &rarr; s1 &rarr; h2 (Flask)</span>
+                        </div>
+                        <div class="metadata-item">
+                            <span class="metadata-label">Manifest Endpoint</span>
+                            <span class="metadata-val">{{ manifest_url }}</span>
+                        </div>
+                        <div class="metadata-item">
+                            <span class="metadata-label">Encoding Format</span>
+                            <span class="metadata-val">H.264 (AVC) + AAC</span>
+                        </div>
+                        <div class="metadata-item">
+                            <span class="metadata-label">Representations</span>
+                            <span class="metadata-val">360p (400k), 480p (800k), 720p (1500k), 1080p (3000k)</span>
+                        </div>
+                        <div class="metadata-item">
+                            <span class="metadata-label">Chunk Segmentation</span>
+                            <span class="metadata-val">2.0s segments (15 total chunks)</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- =================================================================== -->
+        <!-- BOTTOM SECTION: PERSISTENT ABR COMPARISON DASHBOARD                 -->
+        <!-- =================================================================== -->
+        <section class="comparison-dashboard-section card" id="comparisonDashboardSection">
+            <div class="card-header">
+                <div>
+                    <h2 class="card-title">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="20" x2="18" y2="10"/>
+                            <line x1="12" y1="20" x2="12" y2="4"/>
+                            <line x1="6" y1="20" x2="6" y2="14"/>
+                        </svg>
+                        Multi-Algorithm Comparison Results
+                    </h2>
+                    <p class="section-subtitle">
+                        Persistent evaluation records stored on Flask server (survives page refresh &amp; restarts).
+                    </p>
+                </div>
+                <div style="display: flex; gap: 0.75rem; align-items: center;">
+                    <span class="card-badge" id="comparisonCountBadge">0 Runs Recorded</span>
+                </div>
+            </div>
+
+            <!-- Comparative Visual Bar Charts Container -->
+            <div class="comparison-charts-wrapper">
+                <div class="comparison-chart-card">
+                    <div class="chart-mini-header">
+                        <span class="mini-chart-title">Academic QoE Score (Higher is better)</span>
+                        <span class="mini-chart-badge">&alpha;=1, &beta;=4.3, &gamma;=1</span>
+                    </div>
+                    <canvas id="compChartQoE" height="160"></canvas>
+                </div>
+
+                <div class="comparison-chart-card">
+                    <div class="chart-mini-header">
+                        <span class="mini-chart-title">Average Bitrate (kbps)</span>
+                        <span class="mini-chart-badge">Video Quality</span>
+                    </div>
+                    <canvas id="compChartBitrate" height="160"></canvas>
+                </div>
+
+                <div class="comparison-chart-card">
+                    <div class="chart-mini-header">
+                        <span class="mini-chart-title">Stall Duration (seconds)</span>
+                        <span class="mini-chart-badge">Lower is better</span>
+                    </div>
+                    <canvas id="compChartStalls" height="160"></canvas>
+                </div>
+
+                <div class="comparison-chart-card">
+                    <div class="chart-mini-header">
+                        <span class="mini-chart-title">Quality Switches</span>
+                        <span class="mini-chart-badge">Stability</span>
+                    </div>
+                    <canvas id="compChartSwitches" height="160"></canvas>
+                </div>
+            </div>
+
+            <!-- Persistent Summary Table -->
+            <div class="comparison-table-wrapper">
+                <table class="comparison-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Timestamp</th>
+                            <th>Algorithm</th>
+                            <th>Network Scenario</th>
+                            <th>Avg Bitrate</th>
+                            <th>Avg Buffer</th>
+                            <th>Stalls</th>
+                            <th>Total Stall</th>
+                            <th>Rebuffer Ratio</th>
+                            <th>Switches</th>
+                            <th>Academic QoE</th>
+                        </tr>
+                    </thead>
+                    <tbody id="comparisonTableBody">
+                        <!-- Populated dynamically via /api/experiments -->
+                    </tbody>
+                </table>
+                <div id="emptyComparisonMsg" class="empty-comparison">
+                    No completed comparison experiments yet.<br>
+                    Click <strong>Start Experiment</strong> to run a single algorithm, or <strong>Run All 3 Algorithms</strong> to evaluate all three sequentially under the current Mininet scenario.
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+        <div class="footer-note">
+            <strong>Computer Networks Adaptive Bitrate Project:</strong> Real MPEG-DASH video streaming over simulated Mininet topology. Evaluates Throughput-Based ABR, Buffer-Based ABR (BBA), and our proposed QoE-Driven Hybrid ABR under controlled bandwidth conditions.
+        </div>
+    </footer>
+
+    <!-- dash.js Library (Pinned CDN with automatic local fallback) -->
+    <script src="https://cdn.dashjs.org/v4.7.4/dash.all.min.js"></script>
+    <script>
+        if (typeof dashjs === 'undefined') {
+            document.write('<script src="{{ url_for('static', filename='js/dash.all.min.js') }}"><\/script>');
+        }
+    </script>
+    <!-- Custom ABR Controllers Module (Throughput, Buffer-Based, and Hybrid) -->
+    <script src="{{ url_for('static', filename='js/hybrid-abr.js') }}"></script>
+    <!-- Custom Comparison Dashboard & Player Controller -->
+    <script src="{{ url_for('static', filename='js/player.js') }}"></script>
+</body>
+</html>
